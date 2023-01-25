@@ -17,8 +17,7 @@ type Timestruct struct {
 }
 
 func main() {
-
-	for tn := 1; tn < 35; tn++ {
+	for tn := 1; tn < 36; tn++ {
 
 		var nameout, namein string
 		if tn < 10 {
@@ -29,16 +28,14 @@ func main() {
 			nameout = fmt.Sprint(tn, ".a")
 		}
 
-		timer := time.Now()
-
 		testin, _ := os.Open(namein)
 		defer testin.Close()
 		testout, _ := os.Create(nameout)
 		defer testout.Close()
-
+		timer := time.Now()
 		in := bufio.NewReader(testin)   //os.Stdin
 		out := bufio.NewWriter(testout) //os.Stdout
-		defer out.Flush()
+		//defer out.Flush()
 		var t int
 		fmt.Fscan(in, &t)
 		fmt.Fscanln(in)
@@ -58,21 +55,58 @@ func main() {
 				var timestr Timestruct
 				for _, el := range slstr {
 					if len(el) > 1 {
+						var n1, n2, h1, m1, s1, h2, m2, s2 int
 						tspl := strings.Split(el, "-")
 
-						t1, err1 := time.Parse("15:04:05", tspl[0])
-						t2, err2 := time.Parse("15:04:05", tspl[1])
-
-						if err1 != nil || err2 != nil || !(t1.Before(t2) || t1.Equal(t2)) {
-							timestr = Timestruct{N: c}
-							tch <- timestr
+						comparech := make(chan bool, 3)
+						go func(c chan bool) {
+							tspl1 := strings.Split(tspl[0], ":")
+							h1, _ = strconv.Atoi(tspl1[0])
+							m1, _ = strconv.Atoi(tspl1[1])
+							s1, _ = strconv.Atoi(tspl1[2])
+							if h1 >= 24 || m1 >= 60 || s1 >= 60 {
+								comparech <- true
+								return
+							}
+							comparech <- false
 							return
-						} else {
-							n1, _ := strconv.Atoi(strings.ReplaceAll(tspl[0], ":", ""))
-							n2, _ := strconv.Atoi(strings.ReplaceAll(tspl[1], ":", ""))
-							timesl = append(timesl, [2]int{n1, n2})
+						}(comparech)
+
+						go func(c chan bool) {
+
+							tspl2 := strings.Split(tspl[1], ":")
+							h2, _ = strconv.Atoi(tspl2[0])
+							m2, _ = strconv.Atoi(tspl2[1])
+							s2, _ = strconv.Atoi(tspl2[2])
+							if h2 >= 24 || m2 >= 60 || s2 >= 60 {
+								comparech <- true
+								return
+							}
+							comparech <- false
+							return
+						}(comparech)
+
+						go func(c chan bool) {
+							n1, _ = strconv.Atoi(strings.ReplaceAll(tspl[0], ":", ""))
+							n2, _ = strconv.Atoi(strings.ReplaceAll(tspl[1], ":", ""))
+							if n1 > n2 {
+								comparech <- true
+								return
+							}
+							comparech <- false
+							return
+						}(comparech)
+						var ct bool
+						for i := 0; i < 3; i++ {
+							ct = <-comparech
+							if ct {
+								timestr = Timestruct{N: c}
+								tch <- timestr
+								return
+							}
 						}
 
+						timesl = append(timesl, [2]int{n1, n2})
 					}
 
 				}
@@ -90,26 +124,61 @@ func main() {
 				errchan := make(chan bool, len(tstr.Timesl))
 				for id, el := range tstr.Timesl {
 
-					go func(el [2]int, id int) {
+					go func(el [2]int, id int, errc chan bool) {
 						for n := id + 1; n < len(tstr.Timesl); n++ {
 							elch := tstr.Timesl[n]
-							if el[0] == elch[0] || el[0] == elch[1] || el[1] == elch[0] || el[1] == elch[1] {
-								errchan <- true
+							if el[0] == elch[0] || el[0] == elch[1] || el[1] == elch[0] || el[1] == elch[1] ||
+								((el[0] > elch[0] && el[0] < elch[1]) || (el[1] > elch[0] && el[1] < elch[1])) ||
+								((el[0] < elch[0] && el[1] > elch[0]) || (el[0] < elch[1] && el[1] > elch[1])) {
+								errc <- true
 								return
-							} else if (el[0] > elch[0] && el[0] < elch[1]) || (el[1] > elch[0] && el[1] < elch[1]) {
-								errchan <- true
-								return
+
 							}
-							/*else if (elch[0].Before(el[0]) && elch[1].After(el[0])) ||
-								(elch[0].Before(el[1]) && elch[1].After(el[1])) {
-								errchan <- true
-								return
+						}
+						/*
+							errchan1 := make(chan bool, len(tstr.Timesl))
+							var wgg sync.WaitGroup
+
+							for n := id + 1; n < len(tstr.Timesl); n++ {
+								wgg.Add(1)
+								go func(elch, el [2]int, errch chan bool) {
+									defer wgg.Done()
+									//fmt.Println(id, elch, el)
+									if el[0] == elch[0] || el[0] == elch[1] || el[1] == elch[0] || el[1] == elch[1] ||
+										((el[0] > elch[0] && el[0] < elch[1]) || (el[1] > elch[0] && el[1] < elch[1])) ||
+										((el[0] < elch[0] && el[1] > elch[0]) || (el[0] < elch[1] && el[1] > elch[1])) {
+										errch <- true
+										return
+									}
+									errch <- false
+									return
+								}(tstr.Timesl[n], el1, errchan1)
+
+
+
+
+							}
+							wgg.Wait()
+							close(errchan1)
+							for e := range errchan1 {
+								if e {
+									errc <- true
+									return
+								}
+							}*/
+						/*
+							for x := 0; x < len(tstr.Timesl)-id; x++ {
+								err := <-errchan1
+								fmt.Println(x, err)
+								if err {
+									errc <- true
+									return
+								}
 							}*/
 
-						}
-						errchan <- false
+						errc <- false
 						return
-					}(el, id)
+					}(el, id, errchan)
 
 				} // end for range timesl
 
@@ -117,82 +186,39 @@ func main() {
 					err := <-errchan
 					if err {
 						outsl[tstr.N] = "NO"
+						break
 					}
 				}
-				close(errchan)
+				//close(errchan)
 				if outsl[tstr.N] != "NO" {
 					outsl[tstr.N] = "YES"
 				}
 			}
 		}
 		close(timech)
-		fmt.Println(outsl)
-
-		/*
-			if check && n > 1 {
-				errchan := make(chan bool, len(timesl))
-				var wg sync.WaitGroup
-
-				for id, el := range timesl {
-					wg.Add(1)
-					go func(el [2]time.Time, id int) {
-						for n, elch := range timesl {
-							if n != id {
-								if el[0].Equal(elch[0]) || el[0].Equal(elch[1]) || el[1].Equal(elch[0]) || el[1].Equal(elch[1]) ||
-									(elch[0].Before(el[0]) && elch[1].After(el[0])) || (elch[0].Before(el[1]) && elch[1].After(el[1])) {
-									wg.Done()
-									errchan <- true
-									return
-								}
-							}
-						}
-						wg.Done()
-						errchan <- false
-						return
-					}(el, id)
-
-				} // end for range timesl
-
-				wg.Wait()
-				close(errchan)
-				for a := range errchan {
-					if a {
-						errf = true
-						break
-					}
-				}
-			}
-
-			if !errf && check {
-				fmt.Fprint(out, "YES\r\n")
-				//fmt.Println("YES")
-			} else {
-				fmt.Fprint(out, "NO\r\n")
-				//fmt.Println("NO")
-			}*/
-
-		fmt.Println(time.Until(timer))
+		for _, o := range outsl {
+			fmt.Fprint(out, o, "\r\n")
+		}
 		out.Flush()
-		testin.Close()
-		testout.Close()
+		fmt.Println(time.Until(timer))
 	}
-	/*
-		for tn := 1; tn < 11; tn++ {
-			var nameout, nametest string
-			if tn < 10 {
-				nametest = fmt.Sprint(`D:\Education\Route256\sandbox\f\tests\0`, tn, ".a")
-				nameout = fmt.Sprint("0", tn, ".a")
-			} else {
-				nametest = fmt.Sprint(`D:\Education\Route256\sandbox\f\tests\`, tn, ".a")
-				nameout = fmt.Sprint(tn, ".a")
-			}
-			f1, _ := os.Open(nametest)
-			defer f1.Close()
-			f2, _ := os.Open(nameout)
-			defer f2.Close()
-			fmt.Println(tn)
-			compareCheckSum(getMD5SumString(f1), getMD5SumString(f2))
-		} */
+
+	for tn := 1; tn < 36; tn++ {
+		var nameout, nametest string
+		if tn < 10 {
+			nametest = fmt.Sprint(`D:\Education\Route256\sandbox\f\tests\0`, tn, ".a")
+			nameout = fmt.Sprint("0", tn, ".a")
+		} else {
+			nametest = fmt.Sprint(`D:\Education\Route256\sandbox\f\tests\`, tn, ".a")
+			nameout = fmt.Sprint(tn, ".a")
+		}
+		f1, _ := os.Open(nametest)
+		defer f1.Close()
+		f2, _ := os.Open(nameout)
+		defer f2.Close()
+		fmt.Println(tn)
+		compareCheckSum(getMD5SumString(f1), getMD5SumString(f2))
+	}
 
 }
 
